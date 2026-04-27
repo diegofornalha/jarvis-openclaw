@@ -1,0 +1,85 @@
+diff --git a/node_modules/openclaw/dist/extensions/whatsapp/monitor-BifLJ1dl.js b/node_modules/openclaw/dist/extensions/whatsapp/monitor-BifLJ1dl.js
+index 1c34ef9..d517e33 100644
+--- a/node_modules/openclaw/dist/extensions/whatsapp/monitor-BifLJ1dl.js
++++ b/node_modules/openclaw/dist/extensions/whatsapp/monitor-BifLJ1dl.js
+@@ -1009,6 +1009,72 @@ async function attachWebInboxToSocket(options) {
+ 	};
+ 	const detachMessagesUpsert = attachEmitterListener(sock.ev, "messages.upsert", handleMessagesUpsert);
+ 	const detachConnectionUpdate = attachEmitterListener(sock.ev, "connection.update", handleConnectionUpdate);
++	// === jarvis-patch v1: surface inbound emoji reactions as synthetic system events ===
++	console.info("[jarvis-patch:wa-reactions] subscription installed", new Date().toISOString());
++	const __jarvisReactionSeen = new Set();
++	const __JARVIS_REACTION_SEEN_MAX = 1000;
++	const handleMessagesReaction = async (events) => {
++		let reactionRoute;
++		try {
++			reactionRoute = resolveAgentRoute({
++				cfg: options.cfg,
++				channel: "whatsapp",
++				accountId: options.accountId
++			});
++		} catch (err) {
++			inboundLogger.warn({ error: String(err) }, "[jarvis-patch:wa-reactions] failed to resolve route");
++			return;
++		}
++		for (const evt of events) {
++			try {
++				const key = evt.key;
++				const reaction = evt.reaction;
++				if (!key || !reaction) continue;
++				if (reaction.key?.fromMe) continue;
++				const chatJid = key.remoteJid;
++				if (!chatJid) continue;
++				if (chatJid === "status@broadcast") continue;
++				if (chatJid.endsWith("@newsletter")) continue;
++				const targetMsgId = key.id ?? "";
++				const targetFromMe = !!key.fromMe;
++				const reactorJid = reaction.key?.participant ?? reaction.key?.remoteJid ?? key.participant ?? chatJid;
++				const emoji = reaction.text ?? "";
++				const isRemoval = !emoji;
++				const tsMs = Number(reaction.senderTimestampMs ?? Date.now());
++				const dedupKey = `${chatJid}:${targetMsgId}:${reactorJid}:${tsMs}:${emoji}`;
++				if (__jarvisReactionSeen.has(dedupKey)) continue;
++				if (__jarvisReactionSeen.size >= __JARVIS_REACTION_SEEN_MAX) {
++					const first = __jarvisReactionSeen.values().next().value;
++					if (first) __jarvisReactionSeen.delete(first);
++				}
++				__jarvisReactionSeen.add(dedupKey);
++				let originalSnippet = `[mensagem ${targetMsgId}]`;
++				try {
++					const original = await sock.getMessage?.({
++						remoteJid: chatJid,
++						id: targetMsgId,
++						fromMe: targetFromMe,
++						participant: key.participant ?? undefined
++					});
++					const raw = original?.conversation
++						?? original?.extendedTextMessage?.text
++						?? original?.imageMessage?.caption
++						?? original?.videoMessage?.caption
++						?? "";
++					if (raw) originalSnippet = raw.replace(/\s+/g, " ").slice(0, 160);
++				} catch {}
++				const senderLabel = (reactorJid || "").replace(/@.*$/, "");
++				const label = isRemoval
++					? `Usuário ${senderLabel} removeu a reação à mensagem: "${originalSnippet}" [targetMsgId=${targetMsgId}]`
++					: `Usuário ${senderLabel} reagiu ${emoji} à mensagem: "${originalSnippet}" [targetMsgId=${targetMsgId}]`;
++				enqueueSystemEvent(label, { sessionKey: reactionRoute.sessionKey });
++			} catch (err) {
++				inboundLogger.warn({ error: String(err) }, "[jarvis-patch:wa-reactions] handler error");
++			}
++		}
++	};
++	const detachMessagesReaction = attachEmitterListener(sock.ev, "messages.reaction", handleMessagesReaction);
++	// === end jarvis-patch ===
+ 	(async () => {
+ 		try {
+ 			const groups = await sock.groupFetchAllParticipating();
+@@ -1023,6 +1089,7 @@ async function attachWebInboxToSocket(options) {
+ 	return {
+ 		close: async () => {
+ 			try {
++				detachMessagesReaction();
+ 				detachMessagesUpsert();
+ 				detachConnectionUpdate();
+ 				closeInboundMonitorSocket(sock);
