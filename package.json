@@ -5,7 +5,7 @@
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "postinstall": "patch-package && node scripts/patch-openclaw-control-ui.js"
+    "postinstall": "patch-package"
   },
   "keywords": [],
   "author": "",
