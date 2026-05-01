@@ -11,7 +11,7 @@ const cssPath = path.join(root, "node_modules/openclaw/dist/control-ui/assets/in
 const themeSourcePath = path.join(root, "assets/claude.json");
 const bundledThemePath = path.join(root, "node_modules/openclaw/dist/control-ui/assets/claude.json");
 const themeUrl = "https://claw-jarvis.agentesintegrados.com.br/control-ui/assets/claude.json";
-const bundleVersion = "jarvis-claude-theme-20260430-light";
+const bundleVersion = "jarvis-claude-theme-20260430-clear-custom";
 
 function replaceIfPresent(source, search, replacement) {
   return source.includes(search) ? source.replace(search, replacement) : source;
@@ -61,8 +61,21 @@ function patchAsset() {
   source = replaceIfPresent(
     source,
     "var nR=[{id:`claw`,label:`Claw`,description:`Chroma family`,icon:K.zap},{id:`knot`,label:`Knot`,description:`Black & red`,icon:K.link},{id:`dash`,label:`Dash`,description:`Chocolate blueprint`,icon:K.barChart}]",
-    "var nR=[{id:`claw`,label:`Claw`,description:`Chroma family`,icon:K.zap},{id:`custom`,label:`Claude`,description:`Seu tema Claude importado do tweakcn`,icon:K.spark},{id:`dash`,label:`Dash`,description:`Chocolate blueprint`,icon:K.barChart}]",
+    "var nR=[{id:`claw`,label:`Claw`,description:`Chroma family`,icon:K.zap},{id:`custom`,label:`Claude`,description:`Seu tema Claude importado do tweakcn`,icon:K.spark},{id:`dash`,label:`Dash`,description:`Chocolate blueprint`,icon:K.barChart},{id:`original`,label:`Custom`,description:`Voltar para o visual original do OpenClaw`,icon:K.refresh}]",
   );
+  source = replaceIfPresent(
+    source,
+    "var nR=[{id:`claw`,label:`Claw`,description:`Chroma family`,icon:K.zap},{id:`custom`,label:`Claude`,description:`Seu tema Claude importado do tweakcn`,icon:K.spark},{id:`dash`,label:`Dash`,description:`Chocolate blueprint`,icon:K.barChart}]",
+    "var nR=[{id:`claw`,label:`Claw`,description:`Chroma family`,icon:K.zap},{id:`custom`,label:`Claude`,description:`Seu tema Claude importado do tweakcn`,icon:K.spark},{id:`dash`,label:`Dash`,description:`Chocolate blueprint`,icon:K.barChart},{id:`original`,label:`Custom`,description:`Voltar para o visual original do OpenClaw`,icon:K.refresh}]",
+  );
+  source = replaceIfPresent(
+    source,
+    "var nR=[{id:`claw`,label:`Claw`,description:`Chroma family`,icon:K.zap},{id:`custom`,label:`Claude`,description:`Seu tema Claude importado do tweakcn`,icon:K.spark},{id:`dash`,label:`Dash`,description:`Chocolate blueprint`,icon:K.barChart},{id:`original`,label:`Original`,description:`Voltar para o visual original do OpenClaw`,icon:K.refresh}]",
+    "var nR=[{id:`claw`,label:`Claw`,description:`Chroma family`,icon:K.zap},{id:`custom`,label:`Claude`,description:`Seu tema Claude importado do tweakcn`,icon:K.spark},{id:`dash`,label:`Dash`,description:`Chocolate blueprint`,icon:K.barChart},{id:`original`,label:`Custom`,description:`Voltar para o visual original do OpenClaw`,icon:K.refresh}]",
+  );
+  if (!source.includes("{id:`original`,label:`Custom`")) {
+    throw new Error("Could not add custom reset card to OpenClaw control-ui bundle.");
+  }
   source = replaceIfPresent(
     source,
     "function $I(e){let t=[...BI,{id:`custom`,label:`Custom`}];return s`",
@@ -73,6 +86,26 @@ function patchAsset() {
     "${[...nR,{id:`custom`,label:`Custom`,description:e.hasCustomTheme?`Imported from tweakcn${e.customThemeLabel?`: ${e.customThemeLabel}`:``}`:`Open the tweakcn importer for this browser-local slot`,icon:K.spark}].map(t=>s`",
     "${nR.map(t=>s`",
   );
+  const originalThemeCardList =
+    "[{id:`claw`,label:`Claw`,description:`Chroma family`,icon:K.zap},{id:`knot`,label:`Knot`,description:`Black & red`,icon:K.link},{id:`dash`,label:`Dash`,description:`Chocolate blueprint`,icon:K.barChart},{id:`custom`,label:`Custom`,description:`Open the tweakcn importer for this browser-local slot`,icon:K.spark}]";
+  const dynamicThemeCardList = `\${(e.hasCustomTheme?nR:${originalThemeCardList}).map(t=>s\``;
+  source = replaceIfPresent(source, "${nR.map(t=>s`", dynamicThemeCardList);
+  if (!source.includes(dynamicThemeCardList)) {
+    throw new Error("Could not patch theme card list fallback in OpenClaw control-ui bundle.");
+  }
+  const originalResetClickHandler =
+    "@click=${n=>{let r={element:n.currentTarget??void 0};if(t.id===`original`){e.onClearCustomTheme?.(),e.setTheme(`claw`,r),e.setThemeMode?.(`system`,r),e.setBorderRadius?.(50);return}if(t.id===`custom`&&!e.hasCustomTheme){e.onOpenCustomThemeImport?.();return}t.id!==e.theme&&e.setTheme(t.id,r)}}";
+  const previousOriginalResetClickHandler =
+    "@click=${n=>{let r={element:n.currentTarget??void 0};if(t.id===`original`){e.setTheme(`claw`,r),e.setThemeMode?.(`system`,r),e.setBorderRadius?.(50);return}if(t.id===`custom`&&!e.hasCustomTheme){e.onOpenCustomThemeImport?.();return}t.id!==e.theme&&e.setTheme(t.id,r)}}";
+  const themeCardClickHandler =
+    "@click=${n=>{if(t.id===`custom`&&!e.hasCustomTheme){e.onOpenCustomThemeImport?.();return}if(t.id!==e.theme){let r={element:n.currentTarget??void 0};e.setTheme(t.id,r)}}}";
+  if (source.includes(themeCardClickHandler)) {
+    source = source.replace(themeCardClickHandler, originalResetClickHandler);
+  } else if (source.includes(previousOriginalResetClickHandler)) {
+    source = source.replace(previousOriginalResetClickHandler, originalResetClickHandler);
+  } else if (!source.includes(originalResetClickHandler)) {
+    throw new Error("Could not find theme card click handler in OpenClaw control-ui bundle.");
+  }
   const importOpenPattern =
     /openCustomThemeImport\(\)\{this\.customThemeImportExpanded=!0(?:,this\.customThemeImportUrl\|\|\(this\.customThemeImportUrl=`[^`]+`\))?,this\.customThemeImportFocusToken\+=1\}/;
   if (!importOpenPattern.test(source)) {
