@@ -11,7 +11,7 @@ const cssPath = path.join(root, "node_modules/openclaw/dist/control-ui/assets/in
 const themeSourcePath = path.join(root, "assets/claude.json");
 const bundledThemePath = path.join(root, "node_modules/openclaw/dist/control-ui/assets/claude.json");
 const themeUrl = "https://claw-jarvis.agentesintegrados.com.br/control-ui/assets/claude.json";
-const bundleVersion = "jarvis-claude-theme-20260430-r2";
+const bundleVersion = "jarvis-claude-theme-20260430-light";
 
 function replaceIfPresent(source, search, replacement) {
   return source.includes(search) ? source.replace(search, replacement) : source;
@@ -129,10 +129,24 @@ function patchHtml() {
     "var THEMES = { claw: 1, knot: 1, dash: 1 };",
     "var THEMES = { claw: 1, knot: 1, dash: 1, custom: 1 };",
   );
-  html = html.replace(
-    'theme === "knot"\n              ? mode === "light"',
-    'theme === "custom"\n              ? mode === "light"\n                ? "custom-light"\n                : "custom"\n              : theme === "knot"\n                ? mode === "light"',
-  );
+  // Tema Claude é canonicamente CLARO. Força "custom-light" independente
+  // do modo global (light/dark) selecionado pelo usuário. Idempotente:
+  // detecta tanto a forma pristine quanto a forma patcheada (com ramo
+  // condicional dark/light) de versões anteriores do patcher.
+  const customAlwaysLight =
+    'theme === "custom"\n              ? "custom-light"\n              : theme === "knot"\n                ? mode === "light"';
+  const patchedDarkLight =
+    'theme === "custom"\n              ? mode === "light"\n                ? "custom-light"\n                : "custom"\n              : theme === "knot"\n                ? mode === "light"';
+  const pristineKnot = 'theme === "knot"\n              ? mode === "light"';
+  if (html.includes(customAlwaysLight)) {
+    // já no estado desejado, no-op
+  } else if (html.includes(patchedDarkLight)) {
+    html = html.replace(patchedDarkLight, customAlwaysLight);
+  } else if (html.includes(pristineKnot)) {
+    html = html.replace(pristineKnot, customAlwaysLight);
+  } else {
+    throw new Error("Could not find theme resolver branch in OpenClaw control-ui index.html.");
+  }
   html = html.replace(
     /\.\/assets\/index-ckUmEo1l\.js(?:\?v=[^"]*)?/,
     `./assets/index-ckUmEo1l.js?v=${bundleVersion}`,
